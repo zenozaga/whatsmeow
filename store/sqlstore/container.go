@@ -88,30 +88,48 @@ const getAllDevicesQuery = `
 SELECT jid, registration_id, noise_key, identity_key,
        signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
        adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-       platform, business_name, push_name, facebook_uuid
+       platform, business_name, push_name, facebook_uuid, external_id, namespace
 FROM whatsmeow_device
 `
 
 const getDeviceQuery = getAllDevicesQuery + " WHERE jid=$1"
+const getDeviceByExternalIDQuery = getAllDevicesQuery + " WHERE external_id=$1"
 
 type scannable interface {
 	Scan(dest ...interface{}) error
 }
 
 func (c *Container) scanDevice(row scannable) (*store.Device, error) {
+
 	var device store.Device
 	device.DatabaseErrorHandler = c.DatabaseErrorHandler
 	device.Log = c.log
 	device.SignedPreKey = &keys.PreKey{}
+
 	var noisePriv, identityPriv, preKeyPriv, preKeySig []byte
 	var account waProto.ADVSignedDeviceIdentity
 	var fbUUID uuid.NullUUID
 
 	err := row.Scan(
-		&device.ID, &device.RegistrationID, &noisePriv, &identityPriv,
-		&preKeyPriv, &device.SignedPreKey.KeyID, &preKeySig,
-		&device.AdvSecretKey, &account.Details, &account.AccountSignature, &account.AccountSignatureKey, &account.DeviceSignature,
-		&device.Platform, &device.BusinessName, &device.PushName, &fbUUID)
+		&device.ID,
+		&device.RegistrationID,
+		&noisePriv,
+		&identityPriv,
+		&preKeyPriv,
+		&device.SignedPreKey.KeyID,
+		&preKeySig,
+		&device.AdvSecretKey,
+		&account.Details,
+		&account.AccountSignature,
+		&account.AccountSignatureKey,
+		&account.DeviceSignature,
+		&device.Platform,
+		&device.BusinessName,
+		&device.PushName,
+		&fbUUID,
+		&device.ExternalID,
+		&device.Namespace,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan session: %w", err)
 	} else if len(noisePriv) != 32 || len(identityPriv) != 32 || len(preKeyPriv) != 32 || len(preKeySig) != 64 {
@@ -187,13 +205,24 @@ func (c *Container) GetDevice(jid types.JID) (*store.Device, error) {
 	return sess, err
 }
 
+// / GetDeviceByExternalID finds the device with the specified ExternalID in the database.
+//
+// If the device is not found, nil is returned instead.
+func (c *Container) GetDeviceByExternalID(externalID string) (*store.Device, error) {
+	sess, err := c.scanDevice(c.db.QueryRow(getDeviceByExternalIDQuery, externalID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return sess, err
+}
+
 const (
 	insertDeviceQuery = `
 		INSERT INTO whatsmeow_device (jid, registration_id, noise_key, identity_key,
 									  signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
 									  adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-									  platform, business_name, push_name, facebook_uuid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+									  platform, business_name, push_name, facebook_uuid, external_id, namespace)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (jid) DO UPDATE
 		    SET platform=excluded.platform, business_name=excluded.business_name, push_name=excluded.push_name
 	`
@@ -215,8 +244,20 @@ func (c *Container) NewDevice() *store.Device {
 		IdentityKey:    keys.NewKeyPair(),
 		RegistrationID: mathRand.Uint32(),
 		AdvSecretKey:   random.Bytes(32),
+		ExternalID:     "",
+		Namespace:      "default",
 	}
 	device.SignedPreKey = device.IdentityKey.CreateSignedPreKey(1)
+	return device
+}
+
+// NewDeviceWithExternalID creates a new device in this databasw with the given ExternalID.
+//
+// No data is actually stored before Save is called. However, the pairing process will automatically
+// call Save after a successful pairing, so you most likely don't need to call it yourself.
+func (c *Container) NewDeviceWithExternalID(externalID string) *store.Device {
+	device := c.NewDevice()
+	device.ExternalID = externalID
 	return device
 }
 
@@ -237,11 +278,18 @@ func (c *Container) PutDevice(device *store.Device) error {
 	if device.ID == nil {
 		return ErrDeviceIDMustBeSet
 	}
+
 	_, err := c.db.Exec(insertDeviceQuery,
 		device.ID.String(), device.RegistrationID, device.NoiseKey.Priv[:], device.IdentityKey.Priv[:],
 		device.SignedPreKey.Priv[:], device.SignedPreKey.KeyID, device.SignedPreKey.Signature[:],
 		device.AdvSecretKey, device.Account.Details, device.Account.AccountSignature, device.Account.AccountSignatureKey, device.Account.DeviceSignature,
-		device.Platform, device.BusinessName, device.PushName, uuid.NullUUID{UUID: device.FacebookUUID, Valid: device.FacebookUUID != uuid.Nil})
+		device.Platform, device.BusinessName, device.PushName, uuid.NullUUID{UUID: device.FacebookUUID, Valid: device.FacebookUUID != uuid.Nil}, device.ExternalID, device.Namespace)
+
+	if err != nil {
+		fmt.Println("Error in PutDevice", err)
+	}
+
+	fmt.Println("Device ID", device.ID.String())
 
 	if !device.Initialized {
 		innerStore := NewSQLStore(c, *device.ID)

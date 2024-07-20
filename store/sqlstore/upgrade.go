@@ -17,7 +17,7 @@ type upgradeFunc func(*sql.Tx, *Container) error
 //
 // This may be of use if you want to manage the database fully manually, but in most cases you
 // should just call Container.Upgrade to let the library handle everything.
-var Upgrades = [...]upgradeFunc{upgradeV1, upgradeV2, upgradeV3, upgradeV4, upgradeV5, upgradeV6}
+var Upgrades = [...]upgradeFunc{upgradeV1, upgradeV2, upgradeV3, upgradeV4, upgradeV5, upgradeV6, UpgradeV7, UpgradeV8}
 
 func (c *Container) getVersion() (int, error) {
 	_, err := c.db.Exec("CREATE TABLE IF NOT EXISTS whatsmeow_version (version INTEGER)")
@@ -290,5 +290,25 @@ func upgradeV5(tx *sql.Tx, container *Container) error {
 
 func upgradeV6(tx *sql.Tx, container *Container) error {
 	_, err := tx.Exec("ALTER TABLE whatsmeow_device ADD COLUMN facebook_uuid uuid")
+	return err
+}
+
+// UpgradeV7 upgrades the database to version 7.
+//
+// This upgrade adds the `whatsmeow_device`.`external_id` column.
+// This column is used to store the external ID of the device, which is used to identify the device in the external system.
+func UpgradeV7(tx *sql.Tx, container *Container) error {
+	_, err := tx.Exec("ALTER TABLE whatsmeow_device ADD COLUMN external_id TEXT NOT NULL DEFAULT ''")
+	return err
+}
+
+// UpgradeV8 upgrades the database to version 8.
+//
+// This upgrade adds the `whatsmeow_device`.`namespace` column.
+// This column is used to store the namespace of the device, which is used to separate devices into different groups.
+// For example, a namespace could be used as a cluster name. This way devices can be grouped by cluster and the namespace can be used.
+
+func UpgradeV8(tx *sql.Tx, container *Container) error {
+	_, err := tx.Exec("ALTER TABLE whatsmeow_device ADD COLUMN namespace TEXT DEFAULT 'default'")
 	return err
 }

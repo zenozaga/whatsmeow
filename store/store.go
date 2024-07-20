@@ -135,7 +135,16 @@ type Device struct {
 	RegistrationID uint32
 	AdvSecretKey   []byte
 
-	ID           *types.JID
+	ID *types.JID
+
+	// used to store the device's own identity key
+	ExternalID string
+
+	// namespace can be used to separate devices into different groups
+	// for example, a namespace could be use as cluster name. this way
+	// devices can be grouped by cluster and the namespace can be used
+	Namespace string
+
 	Account      *waProto.ADVSignedDeviceIdentity
 	Platform     string
 	BusinessName string
