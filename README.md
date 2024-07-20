@@ -35,3 +35,23 @@ Things that are not yet implemented:
 
 * Sending broadcast list messages (this is not supported on WhatsApp web either)
 * Calls
+
+
+### New Features
+- **GetDeviceByExternalID**: Retrieve a device using an external ID.
+- **NewDeviceWithExternalID**: Create a new device with an external ID.
+
+
+ 
+ #### Example
+
+```go
+external_id := "YOUR_EXTERNAL_ID"
+device := container.NewDeviceWithExternalID(external_id)
+
+// Now you can use the device object for further operations
+retrievedDevice, err := container.GetDeviceByExternalID(external_id)
+if err != nil {
+    log.Fatalf("Error retrieving device: %v", err)
+}
+fmt.Printf("Retrieved Device: %v\n", retrievedDevice)
