@@ -24,10 +24,10 @@ import (
 
 // Container is a wrapper for a SQL database that can contain multiple whatsmeow sessions.
 type Container struct {
-	db      *sql.DB
-	dialect string
-	log     waLog.Logger
-
+	db                   *sql.DB
+	dialect              string
+	log                  waLog.Logger
+	Namespace            string // Namespace is a string that can be used to separate devices in the same database.
 	DatabaseErrorHandler func(device *store.Device, action string, attemptIndex int, err error) (retry bool)
 }
 
@@ -52,6 +52,21 @@ func New(dialect, address string, log waLog.Logger) (*Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to upgrade database: %w", err)
 	}
+
+	/// adding default namespace
+	container.Namespace = "default"
+	return container, nil
+}
+
+// NewWithNamespace connects to the given SQL database and wraps it in a Container with the given namespace.
+//
+// namespace is helpful to separate group devices in the same database.
+func NewWithNamespace(dialect, address string, log waLog.Logger, namespace string) (*Container, error) {
+	container, err := New(dialect, address, log)
+	if err != nil {
+		return nil, err
+	}
+	container.Namespace = namespace
 	return container, nil
 }
 
@@ -81,7 +96,17 @@ func NewWithDB(db *sql.DB, dialect string, log waLog.Logger) *Container {
 		db:      db,
 		dialect: dialect,
 		log:     log,
+
+		// adding default namespace
+		Namespace: "default",
 	}
+}
+
+// NewWithDBAndNamespace wraps an existing SQL connection in a Container and sets the namespace.
+func NewWithDBAndNamespace(db *sql.DB, dialect string, log waLog.Logger, namespace string) *Container {
+	container := NewWithDB(db, dialect, log)
+	container.Namespace = namespace
+	return container
 }
 
 const getAllDevicesQuery = `
@@ -92,8 +117,8 @@ SELECT jid, registration_id, noise_key, identity_key,
 FROM whatsmeow_device
 `
 
-const getDeviceQuery = getAllDevicesQuery + " WHERE jid=$1"
-const getDeviceByExternalIDQuery = getAllDevicesQuery + " WHERE external_id=$1"
+const getDeviceQuery = getAllDevicesQuery + " WHERE jid=$1 AND namespace=$2"
+const getDeviceByExternalIDQuery = getAllDevicesQuery + " WHERE external_id=$1 AND namespace=$2"
 
 type scannable interface {
 	Scan(dest ...interface{}) error
@@ -198,7 +223,7 @@ func (c *Container) GetFirstDevice() (*store.Device, error) {
 //
 // Note that the parameter usually must be an AD-JID.
 func (c *Container) GetDevice(jid types.JID) (*store.Device, error) {
-	sess, err := c.scanDevice(c.db.QueryRow(getDeviceQuery, jid))
+	sess, err := c.scanDevice(c.db.QueryRow(getDeviceQuery, jid, c.Namespace))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -209,7 +234,7 @@ func (c *Container) GetDevice(jid types.JID) (*store.Device, error) {
 //
 // If the device is not found, nil is returned instead.
 func (c *Container) GetDeviceByExternalID(externalID string) (*store.Device, error) {
-	sess, err := c.scanDevice(c.db.QueryRow(getDeviceByExternalIDQuery, externalID))
+	sess, err := c.scanDevice(c.db.QueryRow(getDeviceByExternalIDQuery, externalID, c.Namespace))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -245,7 +270,7 @@ func (c *Container) NewDevice() *store.Device {
 		RegistrationID: mathRand.Uint32(),
 		AdvSecretKey:   random.Bytes(32),
 		ExternalID:     "",
-		Namespace:      "default",
+		Namespace:      c.Namespace,
 	}
 	device.SignedPreKey = device.IdentityKey.CreateSignedPreKey(1)
 	return device
