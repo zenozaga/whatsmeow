@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	waBinary "github.com/zenozaga/whatsmeow/binary"
-	"github.com/zenozaga/whatsmeow/types"
+	waBinary "go.mau.fi/whatsmeow/binary"
+	"go.mau.fi/whatsmeow/types"
 )
 
 /////////////////////////

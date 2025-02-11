@@ -13,7 +13,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 
-	waUserPassword "github.com/zenozaga/whatsmeow/proto/waUserPassword"
+	waUserPassword "go.mau.fi/whatsmeow/proto/waUserPassword"
 
 	_ "embed"
 )
