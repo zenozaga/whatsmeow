@@ -140,6 +140,8 @@ type Device struct {
 	Platform     string
 	BusinessName string
 	PushName     string
+	ExternalID   string
+	Namespace    string
 
 	FacebookUUID uuid.UUID
 

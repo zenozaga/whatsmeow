@@ -17,7 +17,7 @@ type upgradeFunc func(*sql.Tx, *Container) error
 //
 // This may be of use if you want to manage the database fully manually, but in most cases you
 // should just call Container.Upgrade to let the library handle everything.
-var Upgrades = [...]upgradeFunc{upgradeV1, upgradeV2, upgradeV3, upgradeV4, upgradeV5, upgradeV6}
+var Upgrades = [...]upgradeFunc{upgradeV1, upgradeV2, upgradeV3, upgradeV4, upgradeV5, upgradeV6, upgradeV7}
 
 func (c *Container) getVersion() (int, error) {
 	_, err := c.db.Exec("CREATE TABLE IF NOT EXISTS whatsmeow_version (version INTEGER)")
@@ -87,6 +87,7 @@ func (c *Container) Upgrade() error {
 }
 
 func upgradeV1(tx *sql.Tx, _ *Container) error {
+
 	_, err := tx.Exec(`CREATE TABLE whatsmeow_device (
 		jid TEXT PRIMARY KEY,
 
@@ -291,4 +292,38 @@ func upgradeV5(tx *sql.Tx, container *Container) error {
 func upgradeV6(tx *sql.Tx, container *Container) error {
 	_, err := tx.Exec("ALTER TABLE whatsmeow_device ADD COLUMN facebook_uuid uuid")
 	return err
+}
+
+// Adding External ID and namespace to the device table
+// external_id - can be used to store the external system's ID
+// namespace - can be use to group devices by a namespace, e.g. a cluster name
+func upgradeV7(tx *sql.Tx, container *Container) error {
+	return safeAddMultipleColumns(tx, "whatsmeow_device", map[string]string{
+		"external_id": "TEXT DEFAULT ''",
+		"namespace":   "TEXT DEFAULT 'default'",
+	})
+}
+
+////////////////////////////////////
+// Utility | private functions
+////////////////////////////////////
+
+// This method will check if a column exists in a table before adding it.
+func safeAlterTableAddColumn(tx *sql.Tx, tableName string, columnName string, columnType string) error {
+	_, err := tx.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnType))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// This method will add multiple columns to a table.
+func safeAddMultipleColumns(tx *sql.Tx, tableName string, columns map[string]string) error {
+	for columnName, columnType := range columns {
+		err := safeAlterTableAddColumn(tx, tableName, columnName, columnType)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
