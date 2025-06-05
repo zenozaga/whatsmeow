@@ -11,12 +11,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	armadillo "go.mau.fi/whatsmeow/proto"
-	"go.mau.fi/whatsmeow/proto/waCommon"
-	"go.mau.fi/whatsmeow/proto/waMsgApplication"
-	"go.mau.fi/whatsmeow/proto/waMsgTransport"
-	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
+	armadillo "github.com/zenozaga/whatsmeow/proto"
+	"github.com/zenozaga/whatsmeow/proto/waCommon"
+	"github.com/zenozaga/whatsmeow/proto/waMsgApplication"
+	"github.com/zenozaga/whatsmeow/proto/waMsgTransport"
+	"github.com/zenozaga/whatsmeow/types"
+	"github.com/zenozaga/whatsmeow/types/events"
 )
 
 func (cli *Client) handleDecryptedArmadillo(info *types.MessageInfo, decrypted []byte, retryCount int) bool {

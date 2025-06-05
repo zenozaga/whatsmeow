@@ -16,7 +16,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"go.mau.fi/whatsmeow/proto/waE2E"
+	"github.com/zenozaga/whatsmeow/proto/waE2E"
 
 	"go.mau.fi/libsignal/groups"
 	"go.mau.fi/libsignal/protocol"
@@ -25,12 +25,12 @@ import (
 	"go.mau.fi/util/random"
 	"google.golang.org/protobuf/proto"
 
-	"go.mau.fi/whatsmeow/appstate"
-	waBinary "go.mau.fi/whatsmeow/binary"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
-	"go.mau.fi/whatsmeow/store"
-	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
+	"github.com/zenozaga/whatsmeow/appstate"
+	waBinary "github.com/zenozaga/whatsmeow/binary"
+	waProto "github.com/zenozaga/whatsmeow/binary/proto"
+	"github.com/zenozaga/whatsmeow/store"
+	"github.com/zenozaga/whatsmeow/types"
+	"github.com/zenozaga/whatsmeow/types/events"
 )
 
 var pbSerializer = store.SignalProtobufSerializer

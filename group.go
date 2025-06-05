@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"strings"
 
-	waBinary "go.mau.fi/whatsmeow/binary"
-	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
+	waBinary "github.com/zenozaga/whatsmeow/binary"
+	"github.com/zenozaga/whatsmeow/types"
+	"github.com/zenozaga/whatsmeow/types/events"
 )
 
 const InviteLinkPrefix = "https://chat.whatsapp.com/"
