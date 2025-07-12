@@ -30,6 +30,9 @@ type Container struct {
 	db     *dbutil.Database
 	log    waLog.Logger
 	LIDMap *CachedLIDMap
+
+	// default namespace for devices in this container.
+	Namespace string
 }
 
 var _ store.DeviceContainer = (*Container)(nil)
@@ -85,14 +88,22 @@ func NewWithDB(db *sql.DB, dialect string, log waLog.Logger) *Container {
 	return NewWithWrappedDB(wrapped, log)
 }
 
+// NewWithDBAndNamespace wraps an existing SQL connection in a Container with a specific namespace.
+func NewWithDBAndNamespace(db *sql.DB, dialect string, log waLog.Logger, namespace string) *Container {
+	container := NewWithDB(db, dialect, log)
+	container.Namespace = namespace
+	return container
+}
+
 func NewWithWrappedDB(wrapped *dbutil.Database, log waLog.Logger) *Container {
 	if log == nil {
 		log = waLog.Noop
 	}
 	return &Container{
-		db:     wrapped,
-		log:    log,
-		LIDMap: NewCachedLIDMap(wrapped),
+		db:        wrapped,
+		log:       log,
+		LIDMap:    NewCachedLIDMap(wrapped),
+		Namespace: "",
 	}
 }
 
@@ -115,11 +126,12 @@ const getAllDevicesQuery = `
 SELECT jid, lid, registration_id, noise_key, identity_key,
        signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
        adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-       platform, business_name, push_name, facebook_uuid, lid_migration_ts
+       platform, business_name, push_name, facebook_uuid, lid_migration_ts, external_id, namespace
 FROM whatsmeow_device
 `
 
 const getDeviceQuery = getAllDevicesQuery + " WHERE jid=$1"
+const getDeviceByExternalID = getAllDevicesQuery + " WHERE external_id=$1"
 
 func (c *Container) scanDevice(row dbutil.Scannable) (*store.Device, error) {
 	var device store.Device
@@ -133,7 +145,9 @@ func (c *Container) scanDevice(row dbutil.Scannable) (*store.Device, error) {
 		&device.ID, &device.LID, &device.RegistrationID, &noisePriv, &identityPriv,
 		&preKeyPriv, &device.SignedPreKey.KeyID, &preKeySig,
 		&device.AdvSecretKey, &account.Details, &account.AccountSignature, &account.AccountSignatureKey, &account.DeviceSignature,
-		&device.Platform, &device.BusinessName, &device.PushName, &fbUUID, &device.LIDMigrationTimestamp)
+		&device.Platform, &device.BusinessName, &device.PushName, &fbUUID, &device.LIDMigrationTimestamp,
+		&device.ExternalID, &device.Namespace,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan session: %w", err)
 	} else if len(noisePriv) != 32 || len(identityPriv) != 32 || len(preKeyPriv) != 32 || len(preKeySig) != 64 {
@@ -155,6 +169,24 @@ func (c *Container) scanDevice(row dbutil.Scannable) (*store.Device, error) {
 // GetAllDevices finds all the devices in the database.
 func (c *Container) GetAllDevices(ctx context.Context) ([]*store.Device, error) {
 	res, err := c.db.Query(ctx, getAllDevicesQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sessions: %w", err)
+	}
+	sessions := make([]*store.Device, 0)
+	for res.Next() {
+		sess, scanErr := c.scanDevice(res)
+		if scanErr != nil {
+			return sessions, scanErr
+		}
+		sessions = append(sessions, sess)
+	}
+	return sessions, nil
+}
+
+// GetAllDevicesByNamespace finds all the devices in the database that belong to the specified namespace.
+func (c *Container) GetAllDevicesByNamespace(ctx context.Context, namespace string) ([]*store.Device, error) {
+	query := getAllDevicesQuery + " WHERE namespace=$1"
+	res, err := c.db.Query(ctx, query, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}
@@ -197,13 +229,22 @@ func (c *Container) GetDevice(ctx context.Context, jid types.JID) (*store.Device
 	return sess, err
 }
 
+// GetDeviceByExternalID finds the device with the specified external ID in the database.
+func (c *Container) GetDeviceByExternalID(ctx context.Context, externalID string) (*store.Device, error) {
+	sess, err := c.scanDevice(c.db.QueryRow(ctx, getDeviceByExternalID, externalID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return sess, err
+}
+
 const (
 	insertDeviceQuery = `
 		INSERT INTO whatsmeow_device (jid, lid, registration_id, noise_key, identity_key,
 									  signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
 									  adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-									  platform, business_name, push_name, facebook_uuid, lid_migration_ts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+									  platform, business_name, push_name, facebook_uuid, lid_migration_ts, external_id, namespace)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		ON CONFLICT (jid) DO UPDATE
 			SET lid=excluded.lid,
 				platform=excluded.platform,
@@ -211,7 +252,16 @@ const (
 				push_name=excluded.push_name,
 				lid_migration_ts=excluded.lid_migration_ts
 	`
-	deleteDeviceQuery = `DELETE FROM whatsmeow_device WHERE jid=$1`
+
+	updateDeviceNameSpaces = `UPDATE whatsmeow_device SET namespace=$1 WHERE namespace=$2`
+	deleteDeviceQuery      = `DELETE FROM whatsmeow_device WHERE jid=$1`
+)
+
+const (
+	UpdateOptionsSortByJID        SqlOptionsSortBy = "jid"
+	UpdateOptionsSortByLID        SqlOptionsSortBy = "lid"
+	UpdateOptionsSortByExternalID SqlOptionsSortBy = "external_id"
+	UpdateOptionsSortByNamespace  SqlOptionsSortBy = "namespace"
 )
 
 // NewDevice creates a new device in this database.
@@ -227,9 +277,65 @@ func (c *Container) NewDevice() *store.Device {
 		IdentityKey:    keys.NewKeyPair(),
 		RegistrationID: mathRand.Uint32(),
 		AdvSecretKey:   random.Bytes(32),
+		Namespace:      c.Namespace,
 	}
 	device.SignedPreKey = device.IdentityKey.CreateSignedPreKey(1)
 	return device
+}
+
+// NewDeviceWithExternalID creates a new device in this databasw with the given ExternalID.
+//
+// No data is actually stored before Save is called. However, the pairing process will automatically
+// call Save after a successful pairing, so you most likely don't need to call it yourself.
+func (c *Container) NewDeviceWithExternalID(externalID string) *store.Device {
+	device := c.NewDevice()
+	device.ExternalID = externalID
+	return device
+}
+
+// NewDeviceWithNamespace creates a new device in this database with the given ExternalID and Namespace.
+//
+// No data is actually stored before Save is called. However, the pairing process will automatically
+// call Save after a successful pairing, so you most likely don't need to call it yourself.
+func (c *Container) NewDeviceWithNamespace(namespace string) *store.Device {
+	device := c.NewDevice()
+	device.Namespace = namespace
+	return device
+}
+
+// NewDeviceWith creates a new device in this database with the given ExternalID and Namespace.
+//
+// No data is actually stored before Save is called. However, the pairing process will automatically
+// call Save after a successful pairing, so you most likely don't need to call it yourself.
+func (c *Container) NewDeviceWith(externalID string, namespace string) *store.Device {
+	device := c.NewDeviceWithExternalID(externalID)
+	device.Namespace = namespace
+	return device
+}
+
+// ChangeDevicesNamespace changes the namespace of all devices in the database to the specified namespace.
+// This is useful when you want to migrate from one static shard (custer-1) to another shard (cluster-2).
+func (c *Container) ChangeDevicesNamespace(ctx context.Context, from string, to string, options *SqlLimitOptions) error {
+
+	query := updateDeviceNameSpaces
+
+	if options != nil {
+
+		sqlFragment := options.ToSQL(c.db.Dialect)
+
+		query += fmt.Sprintf(` AND jid IN (
+				SELECT jid FROM whatsmeow_device 
+				WHERE namespace = %s
+				%s
+			)`, from, sqlFragment)
+
+	}
+
+	_, err := c.db.Exec(ctx, query, from, to)
+	if err != nil {
+		return fmt.Errorf("failed to change devices namespace: %w", err)
+	}
+	return nil
 }
 
 // ErrDeviceIDMustBeSet is the error returned by PutDevice if you try to save a device before knowing its JID.
@@ -255,6 +361,8 @@ func (c *Container) PutDevice(ctx context.Context, device *store.Device) error {
 		device.AdvSecretKey, device.Account.Details, device.Account.AccountSignature, device.Account.AccountSignatureKey, device.Account.DeviceSignature,
 		device.Platform, device.BusinessName, device.PushName, uuid.NullUUID{UUID: device.FacebookUUID, Valid: device.FacebookUUID != uuid.Nil},
 		device.LIDMigrationTimestamp,
+		device.ExternalID,
+		device.Namespace,
 	)
 
 	if !device.Initialized {

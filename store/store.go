@@ -210,6 +210,9 @@ type Device struct {
 	EventBuffer   EventBuffer
 	LIDs          LIDStore
 	Container     DeviceContainer
+
+	ExternalID string
+	Namespace  string
 }
 
 func (device *Device) GetJID() types.JID {
