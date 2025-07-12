@@ -23,6 +23,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/util/keys"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"go.mau.fi/whatsmeow/util/sqlutil"
 )
 
 // Container is a wrapper for a SQL database that can contain multiple whatsmeow sessions.
@@ -257,13 +258,6 @@ const (
 	deleteDeviceQuery      = `DELETE FROM whatsmeow_device WHERE jid=$1`
 )
 
-const (
-	UpdateOptionsSortByJID        SqlOptionsSortBy = "jid"
-	UpdateOptionsSortByLID        SqlOptionsSortBy = "lid"
-	UpdateOptionsSortByExternalID SqlOptionsSortBy = "external_id"
-	UpdateOptionsSortByNamespace  SqlOptionsSortBy = "namespace"
-)
-
 // NewDevice creates a new device in this database.
 //
 // No data is actually stored before Save is called. However, the pairing process will automatically
@@ -315,7 +309,7 @@ func (c *Container) NewDeviceWith(externalID string, namespace string) *store.De
 
 // ChangeDevicesNamespace changes the namespace of all devices in the database to the specified namespace.
 // This is useful when you want to migrate from one static shard (custer-1) to another shard (cluster-2).
-func (c *Container) ChangeDevicesNamespace(ctx context.Context, from string, to string, options *SqlLimitOptions) error {
+func (c *Container) ChangeDevicesNamespace(ctx context.Context, from string, to string, options *sqlutil.SqlLimitOptions) error {
 
 	query := updateDeviceNameSpaces
 
