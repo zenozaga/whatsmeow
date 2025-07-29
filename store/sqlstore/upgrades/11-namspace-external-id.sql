@@ -5,5 +5,3 @@ ADD COLUMN namespace TEXT DEFAULT '';
 -- v11 (compatible with v8+): Adds an 'external_id' column to link devices with external systems using a stable external identifier.
 ALTER TABLE whatsmeow_device
 ADD COLUMN external_id TEXT DEFAULT '';
-
---
