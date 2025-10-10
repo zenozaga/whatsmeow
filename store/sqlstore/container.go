@@ -318,17 +318,18 @@ func (c *Container) ChangeDevicesNamespace(ctx context.Context, from string, to 
 		sqlFragment := options.ToSQL(c.db.Dialect)
 
 		query += fmt.Sprintf(` AND jid IN (
-				SELECT jid FROM whatsmeow_device 
-				WHERE namespace = %s
-				%s
-			)`, from, sqlFragment)
+			SELECT jid FROM whatsmeow_device 
+			WHERE namespace = %s 
+			%s
+		)`, from, sqlFragment)
 
 	}
 
 	_, err := c.db.Exec(ctx, query, from, to)
 	if err != nil {
-		return fmt.Errorf("failed to change devices namespace: %w", err)
+		return err
 	}
+
 	return nil
 }
 

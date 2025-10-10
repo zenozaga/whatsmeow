@@ -9,15 +9,15 @@ import (
 
 type SqlOptionsSortBy string
 
-type LimitOption struct {
+type PagingOption struct {
+	Offset *int
 	Limit  int
-	Offset int
 }
 
 type SqlLimitOptions struct {
 	SortBy         *SqlOptionsSortBy
 	SortDescending *bool
-	Limit          *LimitOption
+	Paging         *PagingOption
 }
 
 // ToSQL converts the SqlLimitOptions to a SQL string that can be appended to a query.
@@ -29,7 +29,7 @@ type SqlLimitOptions struct {
 //	options := &SqlLimitOptions{
 //	    SortBy:         ptr.To(SqlOptionsSortBy("created_at")),
 //	    SortDescending: ptr.To(true),
-//	    Limit:          &LimitOption{Limit: 10, Offset: 0},
+//	    Limit:          &PagingOption{Limit: 10, Offset: 0},
 //	}
 //	sqlFragment := options.ToSQL(dbutil.Postgres)
 //	// sqlFragment will be "ORDER BY created_at DESC LIMIT 10 OFFSET 0" if dialect is Postgres
@@ -37,7 +37,7 @@ type SqlLimitOptions struct {
 func (c *SqlLimitOptions) ToSQL(dialect dbutil.Dialect) string {
 
 	// If no limit or sort options are set, return an empty string
-	if c.Limit == nil && c.SortBy == nil {
+	if c.Paging == nil && c.SortBy == nil {
 		return ""
 	}
 
@@ -54,15 +54,19 @@ func (c *SqlLimitOptions) ToSQL(dialect dbutil.Dialect) string {
 		sql = append(sql, sort)
 	}
 
-	if c.Limit != nil {
-		limit := fmt.Sprintf("LIMIT %d %d", c.Limit.Offset, c.Limit.Limit)
+	if c.Paging != nil {
 
-		if dialect == dbutil.Postgres {
-			limit = fmt.Sprintf("LIMIT %d OFFSET %d", c.Limit.Limit, c.Limit.Offset)
+		var sqlPaging string
+		var parts []string
+
+		parts = append(parts, fmt.Sprintf("LIMIT %d", c.Paging.Limit))
+
+		if c.Paging.Offset != nil && *c.Paging.Offset > 0 {
+			parts = append(parts, fmt.Sprintf("OFFSET %d", *c.Paging.Offset))
 		}
 
-		sql = append(sql, limit)
-
+		sqlPaging = strings.Join(parts, " ")
+		sql = append(sql, sqlPaging)
 	}
 
 	if len(sql) == 0 {
