@@ -28,6 +28,7 @@ const (
 	HandshakeMessage_HANDSHAKE_PQ_MODE_UNKNOWN HandshakeMessage_HandshakePqMode = 0
 	HandshakeMessage_XXKEM                     HandshakeMessage_HandshakePqMode = 1
 	HandshakeMessage_XXKEM_FS                  HandshakeMessage_HandshakePqMode = 2
+	HandshakeMessage_XXKEM_EPH                 HandshakeMessage_HandshakePqMode = 9
 	HandshakeMessage_WA_CLASSICAL              HandshakeMessage_HandshakePqMode = 3
 	HandshakeMessage_WA_PQ                     HandshakeMessage_HandshakePqMode = 4
 	HandshakeMessage_IKKEM                     HandshakeMessage_HandshakePqMode = 5
@@ -42,6 +43,7 @@ var (
 		0: "HANDSHAKE_PQ_MODE_UNKNOWN",
 		1: "XXKEM",
 		2: "XXKEM_FS",
+		9: "XXKEM_EPH",
 		3: "WA_CLASSICAL",
 		4: "WA_PQ",
 		5: "IKKEM",
@@ -53,6 +55,7 @@ var (
 		"HANDSHAKE_PQ_MODE_UNKNOWN": 0,
 		"XXKEM":                     1,
 		"XXKEM_FS":                  2,
+		"XXKEM_EPH":                 9,
 		"WA_CLASSICAL":              3,
 		"WA_PQ":                     4,
 		"IKKEM":                     5,
@@ -646,11 +649,14 @@ func (ClientPayload_WebInfo_WebSubPlatform) EnumDescriptor() ([]byte, []int) {
 type ClientPayload_UserAgent_DeviceType int32
 
 const (
-	ClientPayload_UserAgent_PHONE    ClientPayload_UserAgent_DeviceType = 0
-	ClientPayload_UserAgent_TABLET   ClientPayload_UserAgent_DeviceType = 1
-	ClientPayload_UserAgent_DESKTOP  ClientPayload_UserAgent_DeviceType = 2
-	ClientPayload_UserAgent_WEARABLE ClientPayload_UserAgent_DeviceType = 3
-	ClientPayload_UserAgent_VR       ClientPayload_UserAgent_DeviceType = 4
+	ClientPayload_UserAgent_PHONE         ClientPayload_UserAgent_DeviceType = 0
+	ClientPayload_UserAgent_TABLET        ClientPayload_UserAgent_DeviceType = 1
+	ClientPayload_UserAgent_DESKTOP       ClientPayload_UserAgent_DeviceType = 2
+	ClientPayload_UserAgent_WEARABLE      ClientPayload_UserAgent_DeviceType = 3
+	ClientPayload_UserAgent_VR            ClientPayload_UserAgent_DeviceType = 4
+	ClientPayload_UserAgent_SMART_DISPLAY ClientPayload_UserAgent_DeviceType = 5
+	ClientPayload_UserAgent_SMART_SPEAKER ClientPayload_UserAgent_DeviceType = 6
+	ClientPayload_UserAgent_AGENT         ClientPayload_UserAgent_DeviceType = 7
 )
 
 // Enum value maps for ClientPayload_UserAgent_DeviceType.
@@ -661,13 +667,19 @@ var (
 		2: "DESKTOP",
 		3: "WEARABLE",
 		4: "VR",
+		5: "SMART_DISPLAY",
+		6: "SMART_SPEAKER",
+		7: "AGENT",
 	}
 	ClientPayload_UserAgent_DeviceType_value = map[string]int32{
-		"PHONE":    0,
-		"TABLET":   1,
-		"DESKTOP":  2,
-		"WEARABLE": 3,
-		"VR":       4,
+		"PHONE":         0,
+		"TABLET":        1,
+		"DESKTOP":       2,
+		"WEARABLE":      3,
+		"VR":            4,
+		"SMART_DISPLAY": 5,
+		"SMART_SPEAKER": 6,
+		"AGENT":         7,
 	}
 )
 
@@ -873,6 +885,10 @@ const (
 	ClientPayload_UserAgent_SMART_GLASSES  ClientPayload_UserAgent_Platform = 35
 	ClientPayload_UserAgent_BLUE_VR        ClientPayload_UserAgent_Platform = 36
 	ClientPayload_UserAgent_AR_WRIST       ClientPayload_UserAgent_Platform = 37
+	ClientPayload_UserAgent_WAIL           ClientPayload_UserAgent_Platform = 38
+	ClientPayload_UserAgent_WORK_ANDROID   ClientPayload_UserAgent_Platform = 39
+	ClientPayload_UserAgent_WORK_IOS       ClientPayload_UserAgent_Platform = 40
+	ClientPayload_UserAgent_AUTOMOTIVE     ClientPayload_UserAgent_Platform = 41
 )
 
 // Enum value maps for ClientPayload_UserAgent_Platform.
@@ -916,6 +932,10 @@ var (
 		35: "SMART_GLASSES",
 		36: "BLUE_VR",
 		37: "AR_WRIST",
+		38: "WAIL",
+		39: "WORK_ANDROID",
+		40: "WORK_IOS",
+		41: "AUTOMOTIVE",
 	}
 	ClientPayload_UserAgent_Platform_value = map[string]int32{
 		"ANDROID":        0,
@@ -956,6 +976,10 @@ var (
 		"SMART_GLASSES":  35,
 		"BLUE_VR":        36,
 		"AR_WRIST":       37,
+		"WAIL":           38,
+		"WORK_ANDROID":   39,
+		"WORK_IOS":       40,
+		"AUTOMOTIVE":     41,
 	}
 )
 
@@ -1094,6 +1118,8 @@ type ClientPayload struct {
 	ProcessingQueueSize    *int32                                       `protobuf:"varint,46,opt,name=processingQueueSize" json:"processingQueueSize,omitempty"`
 	PairedPeripherals      []string                                     `protobuf:"bytes,47,rep,name=pairedPeripherals" json:"pairedPeripherals,omitempty"`
 	TestIsolationID        []byte                                       `protobuf:"bytes,48,opt,name=testIsolationID" json:"testIsolationID,omitempty"`
+	MessageSts             *int64                                       `protobuf:"varint,49,opt,name=messageSts" json:"messageSts,omitempty"`
+	IntegrationAttestation *ClientPayload_IntegrationAttestation        `protobuf:"bytes,50,opt,name=integrationAttestation" json:"integrationAttestation,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1376,6 +1402,20 @@ func (x *ClientPayload) GetPairedPeripherals() []string {
 func (x *ClientPayload) GetTestIsolationID() []byte {
 	if x != nil {
 		return x.TestIsolationID
+	}
+	return nil
+}
+
+func (x *ClientPayload) GetMessageSts() int64 {
+	if x != nil && x.MessageSts != nil {
+		return *x.MessageSts
+	}
+	return 0
+}
+
+func (x *ClientPayload) GetIntegrationAttestation() *ClientPayload_IntegrationAttestation {
+	if x != nil {
+		return x.IntegrationAttestation
 	}
 	return nil
 }
@@ -1964,6 +2004,58 @@ func (x *ClientPayload_UserAgent) GetDistributionChannel() ClientPayload_UserAge
 	return ClientPayload_UserAgent_APPSTORE
 }
 
+type ClientPayload_IntegrationAttestation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StaticUnbound *string                `protobuf:"bytes,1,opt,name=staticUnbound" json:"staticUnbound,omitempty"`
+	OnlineSigned  *string                `protobuf:"bytes,3,opt,name=onlineSigned" json:"onlineSigned,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientPayload_IntegrationAttestation) Reset() {
+	*x = ClientPayload_IntegrationAttestation{}
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientPayload_IntegrationAttestation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientPayload_IntegrationAttestation) ProtoMessage() {}
+
+func (x *ClientPayload_IntegrationAttestation) ProtoReflect() protoreflect.Message {
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientPayload_IntegrationAttestation.ProtoReflect.Descriptor instead.
+func (*ClientPayload_IntegrationAttestation) Descriptor() ([]byte, []int) {
+	return file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP(), []int{1, 3}
+}
+
+func (x *ClientPayload_IntegrationAttestation) GetStaticUnbound() string {
+	if x != nil && x.StaticUnbound != nil {
+		return *x.StaticUnbound
+	}
+	return ""
+}
+
+func (x *ClientPayload_IntegrationAttestation) GetOnlineSigned() string {
+	if x != nil && x.OnlineSigned != nil {
+		return *x.OnlineSigned
+	}
+	return ""
+}
+
 type ClientPayload_InteropData struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	AccountID          *uint64                `protobuf:"varint,1,opt,name=accountID" json:"accountID,omitempty"`
@@ -1975,7 +2067,7 @@ type ClientPayload_InteropData struct {
 
 func (x *ClientPayload_InteropData) Reset() {
 	*x = ClientPayload_InteropData{}
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[8]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2079,7 @@ func (x *ClientPayload_InteropData) String() string {
 func (*ClientPayload_InteropData) ProtoMessage() {}
 
 func (x *ClientPayload_InteropData) ProtoReflect() protoreflect.Message {
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[8]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2092,7 @@ func (x *ClientPayload_InteropData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientPayload_InteropData.ProtoReflect.Descriptor instead.
 func (*ClientPayload_InteropData) Descriptor() ([]byte, []int) {
-	return file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP(), []int{1, 3}
+	return file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP(), []int{1, 4}
 }
 
 func (x *ClientPayload_InteropData) GetAccountID() uint64 {
@@ -2040,7 +2132,7 @@ type ClientPayload_DevicePairingRegistrationData struct {
 
 func (x *ClientPayload_DevicePairingRegistrationData) Reset() {
 	*x = ClientPayload_DevicePairingRegistrationData{}
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[9]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2052,7 +2144,7 @@ func (x *ClientPayload_DevicePairingRegistrationData) String() string {
 func (*ClientPayload_DevicePairingRegistrationData) ProtoMessage() {}
 
 func (x *ClientPayload_DevicePairingRegistrationData) ProtoReflect() protoreflect.Message {
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[9]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2065,7 +2157,7 @@ func (x *ClientPayload_DevicePairingRegistrationData) ProtoReflect() protoreflec
 
 // Deprecated: Use ClientPayload_DevicePairingRegistrationData.ProtoReflect.Descriptor instead.
 func (*ClientPayload_DevicePairingRegistrationData) Descriptor() ([]byte, []int) {
-	return file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP(), []int{1, 4}
+	return file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP(), []int{1, 5}
 }
 
 func (x *ClientPayload_DevicePairingRegistrationData) GetERegid() []byte {
@@ -2143,7 +2235,7 @@ type ClientPayload_WebInfo_WebdPayload struct {
 
 func (x *ClientPayload_WebInfo_WebdPayload) Reset() {
 	*x = ClientPayload_WebInfo_WebdPayload{}
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[10]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2155,7 +2247,7 @@ func (x *ClientPayload_WebInfo_WebdPayload) String() string {
 func (*ClientPayload_WebInfo_WebdPayload) ProtoMessage() {}
 
 func (x *ClientPayload_WebInfo_WebdPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[10]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2261,7 +2353,7 @@ type ClientPayload_UserAgent_AppVersion struct {
 
 func (x *ClientPayload_UserAgent_AppVersion) Reset() {
 	*x = ClientPayload_UserAgent_AppVersion{}
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[11]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2273,7 +2365,7 @@ func (x *ClientPayload_UserAgent_AppVersion) String() string {
 func (*ClientPayload_UserAgent_AppVersion) ProtoMessage() {}
 
 func (x *ClientPayload_UserAgent_AppVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[11]
+	mi := &file_waWa6_WAWebProtobufsWa6_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2328,7 +2420,8 @@ var File_waWa6_WAWebProtobufsWa6_proto protoreflect.FileDescriptor
 
 const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\n" +
-	"\x1dwaWa6/WAWebProtobufsWa6.proto\x12\x11WAWebProtobufsWa6\"\xfe\t\n" +
+	"\x1dwaWa6/WAWebProtobufsWa6.proto\x12\x11WAWebProtobufsWa6\"\x8d\n" +
+	"\n" +
 	"\x10HandshakeMessage\x12Q\n" +
 	"\vclientHello\x18\x02 \x01(\v2/.WAWebProtobufsWa6.HandshakeMessage.ClientHelloR\vclientHello\x12Q\n" +
 	"\vserverHello\x18\x03 \x01(\v2/.WAWebProtobufsWa6.HandshakeMessage.ServerHelloR\vserverHello\x12T\n" +
@@ -2357,17 +2450,18 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\x0fsimulateXxkemFs\x18\b \x01(\bR\x0fsimulateXxkemFs\x12K\n" +
 	"\x06pqMode\x18\t \x01(\x0e23.WAWebProtobufsWa6.HandshakeMessage.HandshakePqModeR\x06pqMode\x12,\n" +
 	"\x11extendedEphemeral\x18\n" +
-	" \x01(\fR\x11extendedEphemeral\"\x99\x01\n" +
+	" \x01(\fR\x11extendedEphemeral\"\xa8\x01\n" +
 	"\x0fHandshakePqMode\x12\x1d\n" +
 	"\x19HANDSHAKE_PQ_MODE_UNKNOWN\x10\x00\x12\t\n" +
 	"\x05XXKEM\x10\x01\x12\f\n" +
-	"\bXXKEM_FS\x10\x02\x12\x10\n" +
+	"\bXXKEM_FS\x10\x02\x12\r\n" +
+	"\tXXKEM_EPH\x10\t\x12\x10\n" +
 	"\fWA_CLASSICAL\x10\x03\x12\t\n" +
 	"\x05WA_PQ\x10\x04\x12\t\n" +
 	"\x05IKKEM\x10\x05\x12\f\n" +
 	"\bIKKEM_FS\x10\x06\x12\v\n" +
 	"\aXXKEM_2\x10\a\x12\v\n" +
-	"\aIKKEM_2\x10\b\"\xe7-\n" +
+	"\aIKKEM_2\x10\b\"\xc70\n" +
 	"\rClientPayload\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\x04R\busername\x12\x18\n" +
 	"\apassive\x18\x03 \x01(\bR\apassive\x12H\n" +
@@ -2407,7 +2501,11 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\fpreacksCount\x18- \x01(\x05R\fpreacksCount\x120\n" +
 	"\x13processingQueueSize\x18. \x01(\x05R\x13processingQueueSize\x12,\n" +
 	"\x11pairedPeripherals\x18/ \x03(\tR\x11pairedPeripherals\x12(\n" +
-	"\x0ftestIsolationID\x180 \x01(\fR\x0ftestIsolationID\x1a\x8f\x02\n" +
+	"\x0ftestIsolationID\x180 \x01(\fR\x0ftestIsolationID\x12\x1e\n" +
+	"\n" +
+	"messageSts\x181 \x01(\x03R\n" +
+	"messageSts\x12o\n" +
+	"\x16integrationAttestation\x182 \x01(\v27.WAWebProtobufsWa6.ClientPayload.IntegrationAttestationR\x16integrationAttestation\x1a\x8f\x02\n" +
 	"\tDNSSource\x12\\\n" +
 	"\tdnsMethod\x18\x0f \x01(\x0e2>.WAWebProtobufsWa6.ClientPayload.DNSSource.DNSResolutionMethodR\tdnsMethod\x12\x1c\n" +
 	"\tappCached\x18\x10 \x01(\bR\tappCached\"\x85\x01\n" +
@@ -2450,7 +2548,7 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\x06DARWIN\x10\x03\x12\t\n" +
 	"\x05WIN32\x10\x04\x12\x0e\n" +
 	"\n" +
-	"WIN_HYBRID\x10\x05\x1a\x9f\x0e\n" +
+	"WIN_HYBRID\x10\x05\x1a\x8a\x0f\n" +
 	"\tUserAgent\x12O\n" +
 	"\bplatform\x18\x01 \x01(\x0e23.WAWebProtobufsWa6.ClientPayload.UserAgent.PlatformR\bplatform\x12U\n" +
 	"\n" +
@@ -2482,7 +2580,7 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\n" +
 	"quaternary\x18\x04 \x01(\rR\n" +
 	"quaternary\x12\x18\n" +
-	"\aquinary\x18\x05 \x01(\rR\aquinary\"F\n" +
+	"\aquinary\x18\x05 \x01(\rR\aquinary\"w\n" +
 	"\n" +
 	"DeviceType\x12\t\n" +
 	"\x05PHONE\x10\x00\x12\n" +
@@ -2490,7 +2588,10 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\x06TABLET\x10\x01\x12\v\n" +
 	"\aDESKTOP\x10\x02\x12\f\n" +
 	"\bWEARABLE\x10\x03\x12\x06\n" +
-	"\x02VR\x10\x04\"N\n" +
+	"\x02VR\x10\x04\x12\x11\n" +
+	"\rSMART_DISPLAY\x10\x05\x12\x11\n" +
+	"\rSMART_SPEAKER\x10\x06\x12\t\n" +
+	"\x05AGENT\x10\a\"N\n" +
 	"\x13DistributionChannel\x12\f\n" +
 	"\bAPPSTORE\x10\x00\x12\v\n" +
 	"\aWEBSITE\x10\x01\x12\x0e\n" +
@@ -2501,7 +2602,7 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\aRELEASE\x10\x00\x12\b\n" +
 	"\x04BETA\x10\x01\x12\t\n" +
 	"\x05ALPHA\x10\x02\x12\t\n" +
-	"\x05DEBUG\x10\x03\"\xa5\x04\n" +
+	"\x05DEBUG\x10\x03\"\xdf\x04\n" +
 	"\bPlatform\x12\v\n" +
 	"\aANDROID\x10\x00\x12\a\n" +
 	"\x03IOS\x10\x01\x12\x11\n" +
@@ -2546,7 +2647,15 @@ const file_waWa6_WAWebProtobufsWa6_proto_rawDesc = "" +
 	"\x04TEST\x10\"\x12\x11\n" +
 	"\rSMART_GLASSES\x10#\x12\v\n" +
 	"\aBLUE_VR\x10$\x12\f\n" +
-	"\bAR_WRIST\x10%\x1aq\n" +
+	"\bAR_WRIST\x10%\x12\b\n" +
+	"\x04WAIL\x10&\x12\x10\n" +
+	"\fWORK_ANDROID\x10'\x12\f\n" +
+	"\bWORK_IOS\x10(\x12\x0e\n" +
+	"\n" +
+	"AUTOMOTIVE\x10)\x1ab\n" +
+	"\x16IntegrationAttestation\x12$\n" +
+	"\rstaticUnbound\x18\x01 \x01(\tR\rstaticUnbound\x12\"\n" +
+	"\fonlineSigned\x18\x03 \x01(\tR\fonlineSigned\x1aq\n" +
 	"\vInteropData\x12\x1c\n" +
 	"\taccountID\x18\x01 \x01(\x04R\taccountID\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\fR\x05token\x12.\n" +
@@ -2614,7 +2723,7 @@ func file_waWa6_WAWebProtobufsWa6_proto_rawDescGZIP() []byte {
 }
 
 var file_waWa6_WAWebProtobufsWa6_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
-var file_waWa6_WAWebProtobufsWa6_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_waWa6_WAWebProtobufsWa6_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_waWa6_WAWebProtobufsWa6_proto_goTypes = []any{
 	(HandshakeMessage_HandshakePqMode)(0),               // 0: WAWebProtobufsWa6.HandshakeMessage.HandshakePqMode
 	(ClientPayload_TrafficAnonymization)(0),             // 1: WAWebProtobufsWa6.ClientPayload.TrafficAnonymization
@@ -2637,10 +2746,11 @@ var file_waWa6_WAWebProtobufsWa6_proto_goTypes = []any{
 	(*ClientPayload_DNSSource)(nil),                     // 18: WAWebProtobufsWa6.ClientPayload.DNSSource
 	(*ClientPayload_WebInfo)(nil),                       // 19: WAWebProtobufsWa6.ClientPayload.WebInfo
 	(*ClientPayload_UserAgent)(nil),                     // 20: WAWebProtobufsWa6.ClientPayload.UserAgent
-	(*ClientPayload_InteropData)(nil),                   // 21: WAWebProtobufsWa6.ClientPayload.InteropData
-	(*ClientPayload_DevicePairingRegistrationData)(nil), // 22: WAWebProtobufsWa6.ClientPayload.DevicePairingRegistrationData
-	(*ClientPayload_WebInfo_WebdPayload)(nil),           // 23: WAWebProtobufsWa6.ClientPayload.WebInfo.WebdPayload
-	(*ClientPayload_UserAgent_AppVersion)(nil),          // 24: WAWebProtobufsWa6.ClientPayload.UserAgent.AppVersion
+	(*ClientPayload_IntegrationAttestation)(nil),        // 21: WAWebProtobufsWa6.ClientPayload.IntegrationAttestation
+	(*ClientPayload_InteropData)(nil),                   // 22: WAWebProtobufsWa6.ClientPayload.InteropData
+	(*ClientPayload_DevicePairingRegistrationData)(nil), // 23: WAWebProtobufsWa6.ClientPayload.DevicePairingRegistrationData
+	(*ClientPayload_WebInfo_WebdPayload)(nil),           // 24: WAWebProtobufsWa6.ClientPayload.WebInfo.WebdPayload
+	(*ClientPayload_UserAgent_AppVersion)(nil),          // 25: WAWebProtobufsWa6.ClientPayload.UserAgent.AppVersion
 }
 var file_waWa6_WAWebProtobufsWa6_proto_depIdxs = []int32{
 	17, // 0: WAWebProtobufsWa6.HandshakeMessage.clientHello:type_name -> WAWebProtobufsWa6.HandshakeMessage.ClientHello
@@ -2651,26 +2761,27 @@ var file_waWa6_WAWebProtobufsWa6_proto_depIdxs = []int32{
 	4,  // 5: WAWebProtobufsWa6.ClientPayload.connectType:type_name -> WAWebProtobufsWa6.ClientPayload.ConnectType
 	5,  // 6: WAWebProtobufsWa6.ClientPayload.connectReason:type_name -> WAWebProtobufsWa6.ClientPayload.ConnectReason
 	18, // 7: WAWebProtobufsWa6.ClientPayload.dnsSource:type_name -> WAWebProtobufsWa6.ClientPayload.DNSSource
-	22, // 8: WAWebProtobufsWa6.ClientPayload.devicePairingData:type_name -> WAWebProtobufsWa6.ClientPayload.DevicePairingRegistrationData
+	23, // 8: WAWebProtobufsWa6.ClientPayload.devicePairingData:type_name -> WAWebProtobufsWa6.ClientPayload.DevicePairingRegistrationData
 	3,  // 9: WAWebProtobufsWa6.ClientPayload.product:type_name -> WAWebProtobufsWa6.ClientPayload.Product
 	6,  // 10: WAWebProtobufsWa6.ClientPayload.iosAppExtension:type_name -> WAWebProtobufsWa6.ClientPayload.IOSAppExtension
-	21, // 11: WAWebProtobufsWa6.ClientPayload.interopData:type_name -> WAWebProtobufsWa6.ClientPayload.InteropData
+	22, // 11: WAWebProtobufsWa6.ClientPayload.interopData:type_name -> WAWebProtobufsWa6.ClientPayload.InteropData
 	1,  // 12: WAWebProtobufsWa6.ClientPayload.trafficAnonymization:type_name -> WAWebProtobufsWa6.ClientPayload.TrafficAnonymization
 	2,  // 13: WAWebProtobufsWa6.ClientPayload.accountType:type_name -> WAWebProtobufsWa6.ClientPayload.AccountType
-	0,  // 14: WAWebProtobufsWa6.HandshakeMessage.ClientHello.pqMode:type_name -> WAWebProtobufsWa6.HandshakeMessage.HandshakePqMode
-	7,  // 15: WAWebProtobufsWa6.ClientPayload.DNSSource.dnsMethod:type_name -> WAWebProtobufsWa6.ClientPayload.DNSSource.DNSResolutionMethod
-	23, // 16: WAWebProtobufsWa6.ClientPayload.WebInfo.webdPayload:type_name -> WAWebProtobufsWa6.ClientPayload.WebInfo.WebdPayload
-	8,  // 17: WAWebProtobufsWa6.ClientPayload.WebInfo.webSubPlatform:type_name -> WAWebProtobufsWa6.ClientPayload.WebInfo.WebSubPlatform
-	12, // 18: WAWebProtobufsWa6.ClientPayload.UserAgent.platform:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.Platform
-	24, // 19: WAWebProtobufsWa6.ClientPayload.UserAgent.appVersion:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.AppVersion
-	11, // 20: WAWebProtobufsWa6.ClientPayload.UserAgent.releaseChannel:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.ReleaseChannel
-	9,  // 21: WAWebProtobufsWa6.ClientPayload.UserAgent.deviceType:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.DeviceType
-	10, // 22: WAWebProtobufsWa6.ClientPayload.UserAgent.distributionChannel:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.DistributionChannel
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	21, // 14: WAWebProtobufsWa6.ClientPayload.integrationAttestation:type_name -> WAWebProtobufsWa6.ClientPayload.IntegrationAttestation
+	0,  // 15: WAWebProtobufsWa6.HandshakeMessage.ClientHello.pqMode:type_name -> WAWebProtobufsWa6.HandshakeMessage.HandshakePqMode
+	7,  // 16: WAWebProtobufsWa6.ClientPayload.DNSSource.dnsMethod:type_name -> WAWebProtobufsWa6.ClientPayload.DNSSource.DNSResolutionMethod
+	24, // 17: WAWebProtobufsWa6.ClientPayload.WebInfo.webdPayload:type_name -> WAWebProtobufsWa6.ClientPayload.WebInfo.WebdPayload
+	8,  // 18: WAWebProtobufsWa6.ClientPayload.WebInfo.webSubPlatform:type_name -> WAWebProtobufsWa6.ClientPayload.WebInfo.WebSubPlatform
+	12, // 19: WAWebProtobufsWa6.ClientPayload.UserAgent.platform:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.Platform
+	25, // 20: WAWebProtobufsWa6.ClientPayload.UserAgent.appVersion:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.AppVersion
+	11, // 21: WAWebProtobufsWa6.ClientPayload.UserAgent.releaseChannel:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.ReleaseChannel
+	9,  // 22: WAWebProtobufsWa6.ClientPayload.UserAgent.deviceType:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.DeviceType
+	10, // 23: WAWebProtobufsWa6.ClientPayload.UserAgent.distributionChannel:type_name -> WAWebProtobufsWa6.ClientPayload.UserAgent.DistributionChannel
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_waWa6_WAWebProtobufsWa6_proto_init() }
@@ -2684,7 +2795,7 @@ func file_waWa6_WAWebProtobufsWa6_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_waWa6_WAWebProtobufsWa6_proto_rawDesc), len(file_waWa6_WAWebProtobufsWa6_proto_rawDesc)),
 			NumEnums:      13,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

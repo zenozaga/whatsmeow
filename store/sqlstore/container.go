@@ -128,7 +128,7 @@ const getAllDevicesQuery = `
 SELECT jid, lid, registration_id, noise_key, identity_key,
        signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
        adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-       platform, business_name, push_name, facebook_uuid, lid_migration_ts, external_id, namespace
+       platform, business_name, push_name, facebook_uuid, lid_migration_ts, companion_meta_nonce, external_id, namespace
 FROM whatsmeow_device
 `
 
@@ -148,7 +148,7 @@ func (c *Container) scanDevice(row dbutil.Scannable) (*store.Device, error) {
 		&preKeyPriv, &device.SignedPreKey.KeyID, &preKeySig,
 		&device.AdvSecretKey, &account.Details, &account.AccountSignature, &account.AccountSignatureKey, &account.DeviceSignature,
 		&device.Platform, &device.BusinessName, &device.PushName, &fbUUID, &device.LIDMigrationTimestamp,
-		&device.ExternalID, &device.Namespace,
+		&device.CompanionMetaNonce, &device.ExternalID, &device.Namespace,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan session: %w", err)
@@ -234,14 +234,15 @@ const (
 		INSERT INTO whatsmeow_device (jid, lid, registration_id, noise_key, identity_key,
 									  signed_pre_key, signed_pre_key_id, signed_pre_key_sig,
 									  adv_key, adv_details, adv_account_sig, adv_account_sig_key, adv_device_sig,
-									  platform, business_name, push_name, facebook_uuid, lid_migration_ts, external_id, namespace)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+									  platform, business_name, push_name, facebook_uuid, lid_migration_ts, companion_meta_nonce, external_id, namespace)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 		ON CONFLICT (jid) DO UPDATE
 			SET lid=excluded.lid,
 				platform=excluded.platform,
 				business_name=excluded.business_name,
 				push_name=excluded.push_name,
-				lid_migration_ts=excluded.lid_migration_ts
+				lid_migration_ts=excluded.lid_migration_ts,
+				companion_meta_nonce=excluded.companion_meta_nonce
 	`
 
 	updateDeviceNameSpaces = `UPDATE whatsmeow_device SET namespace=$1 WHERE namespace=$2`
@@ -345,7 +346,7 @@ func (c *Container) PutDevice(ctx context.Context, device *store.Device) error {
 		device.SignedPreKey.Priv[:], device.SignedPreKey.KeyID, device.SignedPreKey.Signature[:],
 		device.AdvSecretKey, device.Account.Details, device.Account.AccountSignature, device.Account.AccountSignatureKey, device.Account.DeviceSignature,
 		device.Platform, device.BusinessName, device.PushName, uuid.NullUUID{UUID: device.FacebookUUID, Valid: device.FacebookUUID != uuid.Nil},
-		device.LIDMigrationTimestamp,
+		device.LIDMigrationTimestamp, device.CompanionMetaNonce,
 		device.ExternalID,
 		device.Namespace,
 	)

@@ -12,10 +12,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -65,9 +67,10 @@ type Client struct {
 	recvLog waLog.Logger
 	sendLog waLog.Logger
 
-	socket     *socket.NoiseSocket
-	socketLock sync.RWMutex
-	socketWait chan struct{}
+	socket           *socket.NoiseSocket
+	socketLock       sync.RWMutex
+	socketWait       chan struct{}
+	handlerQueueWait chan struct{}
 
 	isLoggedIn            atomic.Bool
 	paired                atomic.Bool
@@ -84,6 +87,9 @@ type Client struct {
 	SynchronousAck             bool
 	EnableDecryptedEventBuffer bool
 	lastDecryptedBufferClear   time.Time
+	unifiedSessionLock         sync.Mutex
+	lastUnifiedSessionSend     time.Time
+	UnifiedSessionInterval     time.Duration
 
 	DisableLoginAutoReconnect bool
 
@@ -100,6 +106,7 @@ type Client struct {
 
 	appStateProc     *appstate.Processor
 	appStateSyncLock sync.Mutex
+	appStateBackoff  map[appstate.WAPatchName]time.Time
 
 	historySyncNotifications        chan *waE2E.HistorySyncNotification
 	historySyncHandlerStarted       atomic.Bool
@@ -108,6 +115,7 @@ type Client struct {
 
 	uploadPreKeysLock sync.Mutex
 	lastPreKeyUpload  time.Time
+	PreKeysUploaded   *exsync.Event
 
 	mediaConnCache *MediaConn
 	mediaConnLock  sync.Mutex
@@ -116,7 +124,6 @@ type Client struct {
 	responseWaitersLock sync.Mutex
 
 	nodeHandlers      map[string]nodeHandler
-	handlerQueue      chan *waBinary.Node
 	eventHandlers     []wrappedEventHandler
 	eventHandlersLock sync.RWMutex
 
@@ -194,6 +201,8 @@ type Client struct {
 	uniqueID  string
 	idCounter atomic.Uint64
 
+	lastKeepAliveID atomic.Pointer[string]
+
 	serverTimeOffset atomic.Int64
 
 	mediaHTTP     *http.Client
@@ -207,12 +216,30 @@ type Client struct {
 	// The library is currently embedded in mautrix-meta (https://github.com/mautrix/meta), but may be separated later.
 	MessengerConfig *MessengerConfig
 	RefreshCAT      func(context.Context) error
+	// The user agent to use (for non-Messenger connections).
+	UserAgent        string
+	WebSocketHeaders http.Header
 }
 
 type groupMetaCache struct {
 	AddressingMode             types.AddressingMode
 	CommunityAnnouncementGroup bool
+	ReadOnly                   bool
 	Members                    []types.JID
+	Admins                     []types.JID
+}
+
+func (gmc *groupMetaCache) CanSend(sender types.JID, message *waE2E.Message) bool {
+	return gmc == nil ||
+		!gmc.ReadOnly ||
+		message.PollUpdateMessage != nil ||
+		message.ReactionMessage != nil ||
+		message.EncReactionMessage != nil ||
+		message.EncEventResponseMessage != nil ||
+		message.QuestionResponseMessage != nil ||
+		message.CommentMessage != nil ||
+		message.EncCommentMessage != nil ||
+		slices.Contains(gmc.Admins, sender.ToNonAD())
 }
 
 type MessengerConfig struct {
@@ -261,10 +288,10 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		responseWaiters:    make(map[string]chan<- *waBinary.Node),
 		eventHandlers:      make([]wrappedEventHandler, 0, 1),
 		messageRetries:     make(map[string]int),
-		handlerQueue:       make(chan *waBinary.Node, handlerQueueSize),
 		appStateProc:       appstate.NewProcessor(deviceStore, log.Sub("AppState")),
 		socketWait:         make(chan struct{}),
 		expectedDisconnect: exsync.NewEvent(),
+		PreKeysUploaded:    exsync.NewEvent(),
 
 		incomingRetryRequestCounter: make(map[incomingRetryKey]int),
 
@@ -278,6 +305,7 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		sessionRecreateHistory: make(map[types.JID]time.Time),
 		GetMessageForRetry:     func(requester, to types.JID, id types.MessageID) *waE2E.Message { return nil },
 		appStateKeyRequests:    make(map[string]time.Time),
+		appStateBackoff:        make(map[appstate.WAPatchName]time.Time),
 
 		pendingPhoneRerequests: make(map[types.MessageID]context.CancelFunc),
 
@@ -285,10 +313,14 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		AutoTrustIdentity:   true,
 
 		BackgroundEventCtx: context.Background(),
+
+		UserAgent:        "",
+		WebSocketHeaders: http.Header{},
 	}
 	cli.paired.Store(deviceStore.ID != nil)
 	cli.nodeHandlers = map[string]nodeHandler{
 		"message":      cli.handleEncryptedMessage,
+		"status":       cli.handleEncryptedMessage,
 		"appdata":      cli.handleEncryptedMessage,
 		"receipt":      cli.handleReceipt,
 		"call":         cli.handleCallEvent,
@@ -457,6 +489,20 @@ func (cli *Client) getOwnLID() types.JID {
 	return cli.Store.GetLID()
 }
 
+func (cli *Client) getUserAgent() string {
+	if cli.MessengerConfig != nil {
+		return cli.MessengerConfig.UserAgent
+	}
+	return cli.UserAgent
+}
+
+func (cli *Client) getMediaOrigin() string {
+	if cli.MessengerConfig != nil {
+		return cli.MessengerConfig.BaseURL
+	}
+	return socket.Origin
+}
+
 func (cli *Client) WaitForConnection(timeout time.Duration) bool {
 	if cli == nil {
 		return false
@@ -490,8 +536,7 @@ func isRetryableConnectError(err error) bool {
 		return true
 	}
 
-	var statusErr socket.ErrWithStatusCode
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[socket.ErrWithStatusCode](err); ok {
 		switch statusErr.StatusCode {
 		case 408, 500, 501, 502, 503, 504:
 			return true
@@ -500,7 +545,9 @@ func isRetryableConnectError(err error) bool {
 		}
 	}
 
-	return errors.Is(err, socket.ErrDialFailed)
+	return errors.Is(err, socket.ErrDialFailed) ||
+		errors.Is(err, ErrHandshakeTimeout) ||
+		errors.Is(err, socket.ErrSocketClosed)
 }
 
 func (cli *Client) ConnectContext(ctx context.Context) error {
@@ -546,25 +593,26 @@ func (cli *Client) unlockedConnect(ctx context.Context) error {
 		client = cli.preLoginHTTP
 	}
 	fs := socket.NewFrameSocket(cli.Log.Sub("Socket"), client)
+	if userAgent := cli.getUserAgent(); userAgent != "" {
+		fs.HTTPHeaders.Set("User-Agent", userAgent)
+	}
 	if cli.MessengerConfig != nil {
 		fs.URL = cli.MessengerConfig.WebsocketURL
 		fs.HTTPHeaders.Set("Origin", cli.MessengerConfig.BaseURL)
-		fs.HTTPHeaders.Set("User-Agent", cli.MessengerConfig.UserAgent)
-		fs.HTTPHeaders.Set("Cache-Control", "no-cache")
-		fs.HTTPHeaders.Set("Pragma", "no-cache")
-		//fs.HTTPHeaders.Set("Sec-Fetch-Dest", "empty")
-		//fs.HTTPHeaders.Set("Sec-Fetch-Mode", "websocket")
-		//fs.HTTPHeaders.Set("Sec-Fetch-Site", "cross-site")
 	}
+	var queue chan *waBinary.Node
+	maps.Copy(fs.HTTPHeaders, cli.WebSocketHeaders)
 	if err := fs.Connect(ctx); err != nil {
 		fs.Close(0)
 		return err
-	} else if err = cli.doHandshake(ctx, fs, *keys.NewKeyPair()); err != nil {
+	} else if queue, err = cli.doHandshake(fs, *keys.NewKeyPair()); err != nil {
 		fs.Close(0)
 		return fmt.Errorf("noise handshake failed: %w", err)
 	}
+	closeWait := make(chan struct{})
+	cli.handlerQueueWait = closeWait
 	go cli.keepAliveLoop(ctx, fs.Context())
-	go cli.handlerQueueLoop(ctx, fs.Context())
+	go cli.handlerQueueLoop(ctx, fs.Context(), queue, closeWait)
 	return nil
 }
 
@@ -612,6 +660,7 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 	if !cli.EnableAutoReconnect || cli.Store.ID == nil {
 		return
 	}
+	// TODO wait for handler queue to close here?
 	for {
 		autoReconnectDelay := time.Duration(cli.AutoReconnectErrors) * 2 * time.Second
 		cli.Log.Debugf("Automatically reconnecting after %v", autoReconnectDelay)
@@ -692,6 +741,14 @@ func (cli *Client) unlockedDisconnect() {
 		cli.socket = nil
 		cli.clearResponseWaiters(xmlStreamEndNode)
 	}
+	if cli.handlerQueueWait != nil {
+		select {
+		case <-cli.handlerQueueWait:
+			cli.handlerQueueWait = nil
+		case <-time.After(5 * time.Second):
+			cli.Log.Warnf("Handler queue wait channel not closed after 5 seconds")
+		}
+	}
 }
 
 // Logout sends a request to unlink the device, then disconnects from the websocket and deletes the local device store.
@@ -704,14 +761,12 @@ func (cli *Client) unlockedDisconnect() {
 func (cli *Client) Logout(ctx context.Context) error {
 	if cli == nil {
 		return ErrClientIsNil
-	} else if cli.MessengerConfig != nil {
-		return errors.New("can't logout with Messenger credentials")
 	}
 	ownID := cli.getOwnID()
 	if ownID.IsEmpty() {
 		return ErrNotLoggedIn
 	}
-	_, err := cli.sendIQ(ctx, infoQuery{
+	query := infoQuery{
 		Namespace: "md",
 		Type:      "set",
 		To:        types.ServerJID,
@@ -722,7 +777,23 @@ func (cli *Client) Logout(ctx context.Context) error {
 				"reason": "user_initiated",
 			},
 		}},
-	})
+	}
+	if cli.MessengerConfig != nil {
+		query = infoQuery{
+			Namespace: "fbid:devices",
+			Type:      "set",
+			To:        types.ServerJID,
+			Content: []waBinary.Node{{
+				Tag:   "remove",
+				Attrs: waBinary.Attrs{"id": int(ownID.Device)},
+				Content: []waBinary.Node{{
+					Tag:     "identity",
+					Content: cli.Store.IdentityKey.Pub[:],
+				}},
+			}},
+		}
+	}
+	_, err := cli.sendIQ(ctx, query)
 	if err != nil {
 		return fmt.Errorf("error sending logout request: %w", err)
 	}
@@ -819,7 +890,13 @@ func (cli *Client) RemoveEventHandlers() {
 	cli.eventHandlersLock.Unlock()
 }
 
-func (cli *Client) handleFrame(ctx context.Context, data []byte) {
+func (cli *Client) makeFrameHandler(queue chan *waBinary.Node) func(ctx context.Context, data []byte) {
+	return func(ctx context.Context, data []byte) {
+		cli.handleFrame(ctx, data, queue)
+	}
+}
+
+func (cli *Client) handleFrame(ctx context.Context, data []byte, queue chan *waBinary.Node) {
 	decompressed, err := waBinary.Unpack(data)
 	if err != nil {
 		cli.Log.Warnf("Failed to decompress frame: %v", err)
@@ -832,7 +909,9 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 		cli.Log.Debugf("Errored frame hex: %s", hex.EncodeToString(decompressed))
 		return
 	}
-	cli.recvLog.Debugf("%s", node)
+	if !cli.isKeepAliveNode(node) {
+		cli.recvLog.Debugf("%s", node)
+	}
 	if node.Tag == "xmlstreamend" {
 		if !cli.isExpectedDisconnect() {
 			cli.Log.Warnf("Received stream end frame")
@@ -842,13 +921,13 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 		// handled
 	} else if _, ok := cli.nodeHandlers[node.Tag]; ok {
 		select {
-		case cli.handlerQueue <- node:
+		case queue <- node:
 		case <-ctx.Done():
 		default:
 			cli.Log.Warnf("Handler queue is full, message ordering is no longer guaranteed")
 			go func() {
 				select {
-				case cli.handlerQueue <- node:
+				case queue <- node:
 				case <-ctx.Done():
 				}
 			}()
@@ -858,14 +937,39 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 	}
 }
 
-func (cli *Client) handlerQueueLoop(evtCtx, connCtx context.Context) {
+func (cli *Client) handlerQueueLoop(evtCtx, connCtx context.Context, queue chan *waBinary.Node, closeWait chan struct{}) {
 	ticker := time.NewTicker(30 * time.Second)
 	ticker.Stop()
 	cli.Log.Debugf("Starting handler queue loop")
+	defer func() {
+	Loop:
+		for {
+			select {
+			case node := <-queue:
+				// Make sure stream errors are handled even after disconnection so the appropriate auto-reconnect is done.
+				// Everything else
+				if node.Tag == "stream:error" {
+					cli.Log.Debugf("Handling stream:error node in handler queue loop after context cancellation")
+					cli.handleStreamError(evtCtx, node)
+				}
+			default:
+				break Loop
+			}
+		}
+		close(closeWait)
+	}()
 Loop:
 	for {
 		select {
-		case node := <-cli.handlerQueue:
+		case node := <-queue:
+			if connCtx.Err() != nil {
+				if node.Tag == "stream:error" {
+					cli.Log.Debugf("Handling stream:error node in handler queue loop after context cancellation")
+					cli.handleStreamError(evtCtx, node)
+				}
+				cli.Log.Debugf("Closing handler queue loop before node handling")
+				return
+			}
 			doneChan := make(chan struct{})
 			start := time.Now()
 			go func() {
@@ -877,11 +981,15 @@ Loop:
 				}
 			}()
 			ticker.Reset(30 * time.Second)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				select {
 				case <-doneChan:
 					ticker.Stop()
 					continue Loop
+				case <-connCtx.Done():
+					ticker.Stop()
+					cli.Log.Warnf("Closing handler queue loop in the middle of handling %s", node)
+					return
 				case <-ticker.C:
 					cli.Log.Warnf("Node handling is taking long for %s (started %s ago)", node, time.Since(start))
 				}
@@ -911,7 +1019,9 @@ func (cli *Client) sendNodeAndGetData(ctx context.Context, node waBinary.Node) (
 		return nil, fmt.Errorf("failed to marshal node: %w", err)
 	}
 
-	cli.sendLog.Debugf("%s", &node)
+	if !cli.isKeepAliveNode(&node) {
+		cli.sendLog.Debugf("%s", &node)
+	}
 	return payload, sock.SendFrame(ctx, payload)
 }
 
@@ -968,12 +1078,16 @@ func (cli *Client) ParseWebMessage(chatJID types.JID, webMsg *waWeb.WebMessageIn
 		if webMsg.GetOriginalSelfAuthorUserJIDString() != "" {
 			info.Sender, err = types.ParseJID(webMsg.GetOriginalSelfAuthorUserJIDString())
 		} else {
-			info.Sender = cli.getOwnID().ToNonAD()
+			if info.Chat.Server == types.HiddenUserServer {
+				info.Sender = cli.getOwnLID().ToNonAD()
+			} else {
+				info.Sender = cli.getOwnID().ToNonAD()
+			}
 			if info.Sender.IsEmpty() {
 				return nil, ErrNotLoggedIn
 			}
 		}
-	} else if chatJID.Server == types.DefaultUserServer || chatJID.Server == types.HiddenUserServer || chatJID.Server == types.NewsletterServer {
+	} else if chatJID.Server == types.DefaultUserServer || chatJID.Server == types.HiddenUserServer || chatJID.Server == types.NewsletterServer || chatJID.Server == types.BotServer {
 		info.Sender = chatJID
 	} else if webMsg.GetParticipant() != "" {
 		info.Sender, err = types.ParseJID(webMsg.GetParticipant())
@@ -1030,11 +1144,17 @@ func (cli *Client) getUnifiedSessionID() string {
 	return strconv.FormatInt(unifiedID, 10)
 }
 
-func (cli *Client) sendUnifiedSession() {
+func (cli *Client) sendUnifiedSession(checkLastSend bool) {
 	if cli == nil {
 		return
 	}
-
+	cli.unifiedSessionLock.Lock()
+	if checkLastSend && time.Since(cli.lastUnifiedSessionSend) < cli.UnifiedSessionInterval {
+		cli.unifiedSessionLock.Unlock()
+		return
+	}
+	cli.lastUnifiedSessionSend = time.Now()
+	cli.unifiedSessionLock.Unlock()
 	node := waBinary.Node{
 		Tag:   "ib",
 		Attrs: waBinary.Attrs{},
